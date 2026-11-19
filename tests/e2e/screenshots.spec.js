@@ -42,6 +42,7 @@ test.describe( 'Screenshots', () => {
 
 	test( '2: deleting for good asks first', async () => {
 		await page.goto( SCREEN );
+		await page.locator( 'tr', { hasText: 'Offer box' } ).hover();
 		await page.locator( 'tr', { hasText: 'Offer box' } ).getByRole( 'link', { name: /Delete Offer box permanently/ } ).click();
 		await expect( page.locator( '.axle-confirm' ) ).toBeVisible();
 		await shot( page, 2 );
@@ -55,6 +56,7 @@ test.describe( 'Screenshots', () => {
 
 	test( '4: a newer template took the name', async () => {
 		await page.goto( `${ SCREEN }&view=site-editor` );
+		await page.locator( 'tr', { hasText: 'Axle clash' } ).hover();
 		await page.getByRole( 'link', { name: /Restore Axle clash/ } ).click();
 		await expect( page.locator( '.axle-confirm' ) ).toBeVisible();
 		await shot( page, 4 );

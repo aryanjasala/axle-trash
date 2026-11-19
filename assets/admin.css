@@ -1,0 +1,17 @@
+/* Layout that only the Trash screen needs. */
+.axle-ui .axle-confirm .button {
+	height: auto;
+	min-height: 30px;
+	white-space: normal;
+	text-align: left;
+	line-height: 1.5;
+	padding-top: 3px;
+	padding-bottom: 3px;
+}
+
+.axle-ui .axle-confirm .axle-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 16px;
+}

@@ -14,6 +14,7 @@ use AryanX\Axle\Trash\Settings;
 use AryanX\Axle\Trash\Status;
 use AryanX\Axle\Trash\Trash;
 use const AryanX\Axle\Trash\PLUGIN_FILE;
+use const AryanX\Axle\Trash\VERSION;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -115,6 +116,7 @@ final class Page implements Service {
 	public function assets( $hook_suffix ): void {
 		if ( '' !== $this->hook && $hook_suffix === $this->hook ) {
 			AxleUi::enqueue();
+			wp_enqueue_style( 'axle-trash-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array( AxleUi::HANDLE ), VERSION );
 		}
 	}
 

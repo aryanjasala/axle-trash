@@ -107,6 +107,9 @@
       "url": "/wp-admin/tools.php?page=axle-trash&view=users",
       "steps": [
         {
+          "hover": "tr:has-text('Wanda')"
+        },
+        {
           "click": "role=link[name=/Delete .* permanently/]"
         },
         {
@@ -133,6 +136,9 @@
       ],
       "url": "/wp-admin/tools.php?page=axle-trash&view=site-editor",
       "steps": [
+        {
+          "hover": "tr:has-text('Axle clash')"
+        },
         {
           "click": "role=link[name=/Restore Axle clash/]"
         },
