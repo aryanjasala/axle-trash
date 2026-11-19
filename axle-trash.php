@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Axle Trash
  * Plugin URI:        https://wordpress.org/plugins/axle-trash/
- * Description:       TODO: one sentence on what it does.
- * Version:           0.1.0
+ * Description:       Everything WordPress deletes for good goes to a trash first, and comes back with its original ID: templates, template parts, patterns, navigation menus, fonts and deleted users with their content.
+ * Version:           1.0.0
  * Requires at least: 6.6
  * Requires PHP:      7.4
  * Author:            Aryan Jasala
@@ -19,7 +19,7 @@ namespace AryanX\Axle\Trash;
 
 defined( 'ABSPATH' ) || exit;
 
-const VERSION     = '0.1.0';
+const VERSION     = '1.0.0';
 const PLUGIN_FILE = __FILE__;
 
 // PSR-4: AryanX\Axle\Trash\Foo\Bar lives in src/Foo/Bar.php.
@@ -36,5 +36,8 @@ spl_autoload_register(
 		}
 	}
 );
+
+register_activation_hook( __FILE__, array( Retention::class, 'schedule' ) );
+register_deactivation_hook( __FILE__, array( Retention::class, 'unschedule' ) );
 
 add_action( 'plugins_loaded', array( Plugin::class, 'boot' ) );
