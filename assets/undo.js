@@ -79,7 +79,7 @@
 				notices().createInfoNotice( notice.message, {
 					type: 'snackbar',
 					id: 'axle-trash-' + info.id,
-					explicitDismiss: false,
+					explicitDismiss: true,
 					actions: [
 						{
 							label: notice.label,

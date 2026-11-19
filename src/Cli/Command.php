@@ -84,6 +84,16 @@ final class Command {
 			);
 		}
 
+		if ( 'ids' === $format ) {
+			\WP_CLI::line( implode( ' ', wp_list_pluck( $rows, 'id' ) ) );
+			return;
+		}
+
+		if ( 'count' === $format ) {
+			\WP_CLI::line( (string) count( $rows ) );
+			return;
+		}
+
 		\WP_CLI\Utils\format_items( $format, $rows, array( 'id', 'kind', 'title', 'deleted_by', 'deleted_at', 'used' ) );
 	}
 

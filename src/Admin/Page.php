@@ -190,7 +190,7 @@ final class Page implements Service {
 				return;
 			}
 
-			$this->finish( is_wp_error( $result ) ? 'failed' : 'restored', array( is_wp_error( $result ) ? $result->get_error_message() : $id ), is_wp_error( $result ) ? $result : null );
+			$this->finish( is_wp_error( $result ) ? 'failed' : 'restored', array( 1 ), is_wp_error( $result ) ? $result : null );
 		}
 
 		if ( 'confirm_delete' === $action ) {

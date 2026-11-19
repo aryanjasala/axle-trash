@@ -1,0 +1,34 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"meta": {
+		"title": "Axle Trash demo",
+		"author": "aryanjasala"
+	},
+	"landingPage": "/wp-admin/tools.php?page=axle-trash",
+	"preferredVersions": {
+		"php": "8.3",
+		"wp": "latest"
+	},
+	"features": {
+		"networking": true
+	},
+	"login": true,
+	"steps": [
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "git:directory",
+				"url": "https://github.com/aryanjasala/axle-trash",
+				"ref": "main"
+			},
+			"options": {
+				"activate": true,
+				"targetFolderName": "axle-trash"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require_once '/wordpress/wp-load.php'; $p = wp_insert_post( array( 'post_type' => 'wp_block', 'post_status' => 'publish', 'post_title' => 'Offer box', 'post_content' => '<!-- wp:paragraph --><p>Free shipping this week.</p><!-- /wp:paragraph -->' ) ); wp_insert_post( array( 'post_status' => 'publish', 'post_title' => 'Weekly offers', 'post_content' => '<!-- wp:block {\"ref\":' . $p . '} /-->' ) ); $n = wp_insert_post( array( 'post_type' => 'wp_navigation', 'post_status' => 'publish', 'post_title' => 'Footer links', 'post_content' => '' ) ); wp_delete_post( $p, true ); wp_delete_post( $n, true );"
+		}
+	]
+}

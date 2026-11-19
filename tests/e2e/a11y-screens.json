@@ -1,1 +1,197 @@
-{ "screens": [], "skip": [] }
+{
+  "include": [
+    ".axle-ui"
+  ],
+  "exclude": [],
+  "screens": [
+    {
+      "name": "Trash, empty",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash"
+    },
+    {
+      "name": "Trash, with every kind",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": [],
+          "save": "ids"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash",
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, Site Editor view",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": []
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&view=site-editor",
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, Users view",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": []
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&view=users",
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, confirm delete",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": [],
+          "save": "ids"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&axle_action=confirm_delete&item={ids.pattern}",
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ],
+      "steps": [
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ]
+    },
+    {
+      "name": "Trash, confirm delete of a user",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": [],
+          "save": "ids"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&view=users",
+      "steps": [
+        {
+          "click": "role=link[name=/Delete .* permanently/]"
+        },
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, restore conflict",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": [],
+          "save": "ids"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&view=site-editor",
+      "steps": [
+        {
+          "click": "role=link[name=/Restore Axle clash/]"
+        },
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, empty the trash step",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": []
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash",
+      "steps": [
+        {
+          "click": "role=button[name='Empty the trash']"
+        },
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Trash, after a restore",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "populate",
+          "args": []
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-trash&axle_done=restored&n=2&m=1",
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "reset",
+          "args": []
+        }
+      ]
+    }
+  ],
+  "skip": {}
+}
