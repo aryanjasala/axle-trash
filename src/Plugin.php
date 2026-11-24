@@ -77,6 +77,7 @@ final class Plugin {
 	private function services(): array {
 		return array(
 			new Status(),
+			new Upgrade(),
 			new Interceptor( $this->trash, new Users() ),
 			new Retention( $this->trash ),
 			new Page( $this->trash ),

@@ -22,6 +22,7 @@ function reset() {
 			foreach ( get_posts( array( 'post_type' => $type, 'post_status' => 'any', 'numberposts' => 100, 'fields' => 'ids' ) ) as $id ) { wp_delete_post( (int) $id, true ); }
 		}
 		delete_option( 'axle_trash_settings' );
+		delete_option( 'axle_trash_test_mails' );
 		return true;`
 	);
 }

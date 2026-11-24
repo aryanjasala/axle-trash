@@ -15,8 +15,11 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Usage {
 
-	/** The most posts read for one count. */
+	/** The most posts the person can edit that one count reaches before it shows "+". */
 	private const LIMIT = 300;
+
+	/** The most pages of LIMIT posts read for one count, so a count never runs unbounded. */
+	private const ROUNDS = 10;
 
 	/**
 	 * A short description of what uses the item, or an empty string.
@@ -71,67 +74,96 @@ final class Usage {
 	 *
 	 * @param string $block The block name without the comment marker, such as `wp:block`.
 	 * @param int    $ref   The referenced post ID.
-	 * @return array{0: int, 1: bool} Count of posts the person can edit, and whether the scan hit its limit.
+	 * @return array{0: int, 1: bool} Count of posts the person can edit, and whether more of them may exist.
 	 */
 	private function referenced( string $block, int $ref ): array {
 		global $wpdb;
 
-		$like = '%' . $wpdb->esc_like( '<!-- ' . $block . ' {' ) . '%' . $wpdb->esc_like( '"ref":' . $ref ) . '%';
-		$ids  = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- A bounded scan of post content for a block reference; core has no index for it.
-			$wpdb->prepare(
-				"SELECT ID FROM {$wpdb->posts} WHERE post_content LIKE %s AND post_status NOT IN ( 'auto-draft', 'inherit', 'trash', %s ) AND post_type <> 'revision' LIMIT %d",
-				$like,
-				Status::STATUS,
-				self::LIMIT
-			)
-		);
-
+		$like    = '%' . $wpdb->esc_like( '<!-- ' . $block . ' {' ) . '%' . $wpdb->esc_like( '"ref":' . $ref ) . '%';
 		$pattern = '/<!-- ' . preg_quote( $block, '/' ) . ' \{[^}]*"ref":' . $ref . '[,}]/';
 		$count   = 0;
+		$offset  = 0;
 
-		foreach ( (array) $ids as $post_id ) {
-			$post = get_post( (int) $post_id );
+		// Read in pages until the person's own count reaches the limit or the posts run out, so
+		// the number and the "+" only ever describe posts the person can edit.
+		for ( $round = 0; $round < self::ROUNDS; $round++ ) {
+			$ids = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- A bounded scan of post content for a block reference; core has no index for it.
+				$wpdb->prepare(
+					"SELECT ID FROM {$wpdb->posts} WHERE post_content LIKE %s AND post_status NOT IN ( 'auto-draft', 'inherit', 'trash', %s ) AND post_type <> 'revision' ORDER BY ID ASC LIMIT %d OFFSET %d",
+					$like,
+					Status::STATUS,
+					self::LIMIT,
+					$offset
+				)
+			);
 
-			if ( ! $post instanceof \WP_Post || 1 !== preg_match( $pattern, $post->post_content ) ) {
-				continue;
+			foreach ( (array) $ids as $post_id ) {
+				$post = get_post( (int) $post_id );
+
+				if ( ! $post instanceof \WP_Post || 1 !== preg_match( $pattern, $post->post_content ) ) {
+					continue;
+				}
+
+				if ( current_user_can( 'edit_post', $post->ID ) ) {
+					++$count;
+
+					if ( $count >= self::LIMIT ) {
+						return array( $count, true );
+					}
+				}
 			}
 
-			if ( current_user_can( 'edit_post', $post->ID ) ) {
-				++$count;
+			if ( count( (array) $ids ) < self::LIMIT ) {
+				break;
 			}
+
+			$offset += self::LIMIT;
 		}
 
-		return array( $count, count( (array) $ids ) >= self::LIMIT );
+		return array( $count, false );
 	}
 
 	/**
 	 * Posts that use a page template.
 	 *
 	 * @param string $slug The template's slug.
-	 * @return array{0: int, 1: bool}
+	 * @return array{0: int, 1: bool} Count of posts the person can edit, and whether more of them may exist.
 	 */
 	private function pages_using( string $slug ): array {
-		$ids = get_posts(
-			array(
-				'post_type'              => 'any',
-				'post_status'            => array( 'publish', 'draft', 'pending', 'private', 'future' ),
-				'posts_per_page'         => self::LIMIT,
-				'fields'                 => 'ids',
-				'no_found_rows'          => true,
-				'update_post_term_cache' => false,
-				'meta_key'               => '_wp_page_template', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- The only place a page's template is stored.
-				'meta_value'             => $slug, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Same lookup.
-			)
-		);
-
 		$count = 0;
 
-		foreach ( $ids as $post_id ) {
-			if ( current_user_can( 'edit_post', (int) $post_id ) ) {
-				++$count;
+		for ( $round = 1; $round <= self::ROUNDS; $round++ ) {
+			$ids = get_posts(
+				array(
+					'post_type'              => 'any',
+					'post_status'            => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+					'posts_per_page'         => self::LIMIT,
+					'paged'                  => $round,
+					'orderby'                => 'ID',
+					'order'                  => 'ASC',
+					'fields'                 => 'ids',
+					'no_found_rows'          => true,
+					'update_post_term_cache' => false,
+					'meta_key'               => '_wp_page_template', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- The only place a page's template is stored.
+					'meta_value'             => $slug, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Same lookup.
+				)
+			);
+
+			foreach ( $ids as $post_id ) {
+				if ( current_user_can( 'edit_post', (int) $post_id ) ) {
+					++$count;
+
+					if ( $count >= self::LIMIT ) {
+						return array( $count, true );
+					}
+				}
+			}
+
+			if ( count( $ids ) < self::LIMIT ) {
+				break;
 			}
 		}
 
-		return array( $count, count( $ids ) >= self::LIMIT );
+		return array( $count, false );
 	}
 }

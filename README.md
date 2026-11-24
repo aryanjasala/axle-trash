@@ -1,3 +1,5 @@
+<p align="center"><img src=".wordpress-org/icon-256x256.png" alt="" width="88"></p>
+
 <h1 align="center">Axle Trash</h1>
 
 <p align="center">
@@ -22,7 +24,7 @@
 
 ---
 
-WordPress has no trash for most of what the Site Editor deletes. Delete a template, a template part, a synced pattern, a navigation menu or a font, and it is gone, with its font files. Delete a user with "Delete all content" and every custom post and every upload they made goes with them. Rival plugins can undo some of it, but they bring it back under a new ID, so every page that pointed at it still breaks. Axle Trash catches these deletes, parks the item with its ID, and shows the page it left behind: what used it, who deleted it, and when. Restore puts it back exactly as it was. Nothing leaves your site.
+WordPress has no trash for most of what the Site Editor deletes. Delete a template, a template part, a synced pattern, a navigation menu or a font, and it is gone, with its font files. Delete a user with "Delete all content" and every custom post and every upload they made goes with them. Rival plugins can undo some of it, but they bring it back under a new ID, so every page that pointed at it still breaks. Axle Trash catches these deletes, parks the item with its ID, and shows the page it left behind: what used it, who deleted it, and when. Restore puts it back exactly as it was. Nothing leaves your site, and a deleted user's password is never kept.
 
 > [!NOTE]
 > Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
@@ -99,6 +101,7 @@ assets/undo.js           the editor snackbar with Undo
 src/
 ├── Plugin.php           creates the services
 ├── Status.php           the axle_trash status, the snapshot type, meta keys
+├── Upgrade.php          one-time data changes (blanks old password hashes)
 ├── Kinds.php            kinds, views, per-kind capabilities
 ├── Settings.php         kinds kept, retention
 ├── Interceptor.php      pre_delete_post, pre_delete_attachment, delete_user
@@ -137,12 +140,12 @@ Small plugins that each fill one gap in WordPress, all free with no pro version.
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-license-tracker/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle License Tracker](https://github.com/aryanjasala/axle-license-tracker) | See which premium plugins are licensed, which lapsed and stopped getting updates, and what renews when |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-review/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Review](https://github.com/aryanjasala/axle-review) | Share drafts through private links, collect outside feedback as block Notes, and know when an approval is out of date |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-runtime-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Runtime Doctor](https://github.com/aryanjasala/axle-runtime-doctor) | Check OPcache coverage, the object cache, PHP support and limits, cron and more, with the fix for your host |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-sessions/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Sessions](https://github.com/aryanjasala/axle-sessions) | See every device signed in, sign out one, and limit sessions per role |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-smoke-test/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Smoke Test](https://github.com/aryanjasala/axle-smoke-test) | Check key pages after every update or deploy, see what broke and roll it back |
 | <img src="https://raw.githubusercontent.com/aryanjasala/block-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Doctor](https://github.com/aryanjasala/block-doctor) | Scan the site for broken blocks and fix them in bulk, with undo. See which posts use each block before you switch a plugin off |
-| <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, see the diff, reset them, send them to Git, move them to another site or lock them |
+| <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, merge a theme update into them, reset them, send them to Git, move them to another site or lock them |
 | <img src="https://raw.githubusercontent.com/aryanjasala/role-right-sizer/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Role Right-Sizer](https://github.com/aryanjasala/role-right-sizer) | Recommends the smallest role each user needs, from what they actually do |
 | <img src="https://raw.githubusercontent.com/aryanjasala/update-rehearsal/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Update Rehearsal](https://github.com/aryanjasala/update-rehearsal) | Try plugin, theme, core and PHP updates, a new plugin, or life without one, on a disposable copy of your site in WordPress Playground first |
-| <img src="https://raw.githubusercontent.com/aryanjasala/user-session-manager/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [User Session Manager](https://github.com/aryanjasala/user-session-manager) | See every device signed in, sign out one, and limit sessions per role |
 
 ## License
 

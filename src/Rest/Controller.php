@@ -11,11 +11,13 @@ use AryanX\Axle\Trash\Items;
 use AryanX\Axle\Trash\Service;
 use AryanX\Axle\Trash\Status;
 use AryanX\Axle\Trash\Trash;
+use AryanX\Axle\Trash\Users;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * POST /axle-trash/v1/items/{id}/restore. The check is the item's own capability.
+ * POST /axle-trash/v1/items/{id}/restore. The check is the item's own capability. Core's REST
+ * nonce (or an application password) authenticates the caller; the permission callback decides.
  */
 final class Controller implements Service {
 
@@ -55,12 +57,15 @@ final class Controller implements Service {
 				'permission_callback' => array( $this, 'can_restore' ),
 				'args'                => array(
 					'id'      => array(
-						'type'     => 'integer',
-						'required' => true,
+						'type'              => 'integer',
+						'required'          => true,
+						'minimum'           => 1,
+						'sanitize_callback' => 'absint',
 					),
 					'replace' => array(
-						'type'    => 'boolean',
-						'default' => false,
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
 				),
 			)
@@ -74,7 +79,7 @@ final class Controller implements Service {
 	 * @return bool|\WP_Error
 	 */
 	public function can_restore( \WP_REST_Request $request ) {
-		$post = get_post( (int) $request['id'] );
+		$post = get_post( (int) $request->get_param( 'id' ) );
 
 		if ( $post instanceof \WP_Post && Status::STATUS === $post->post_status && Items::can( $post ) ) {
 			return true;
@@ -90,17 +95,26 @@ final class Controller implements Service {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function restore( \WP_REST_Request $request ) {
-		$result = $this->trash->restore( (int) $request['id'], (bool) $request['replace'] );
+		$id    = (int) $request->get_param( 'id' );
+		$reset = ( new Users() )->needs_reset( $id );
+
+		$result = $this->trash->restore( $id, (bool) $request->get_param( 'replace' ) );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		return new \WP_REST_Response(
-			array(
-				'restored' => true,
-				'id'       => (int) $request['id'],
-			) 
+		$data = array(
+			'restored' => true,
+			'id'       => $id,
 		);
+
+		if ( $reset > 0 ) {
+			// The account came back with a new random password. Nothing is sent: the caller decides.
+			$data['user_id']                 = $reset;
+			$data['password_reset_required'] = true;
+		}
+
+		return new \WP_REST_Response( $data );
 	}
 }

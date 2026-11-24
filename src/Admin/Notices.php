@@ -83,10 +83,9 @@ final class Notices implements Service {
 		}
 
 		printf(
-			'<div class="notice notice-info is-dismissible"><p>%1$s %2$s %3$s</p></div>',
+			'<div class="notice notice-info is-dismissible"><p>%1$s %2$s</p></div>',
 			esc_html__( 'Moved to Tools > Trash. The account and what was deleted with it stay there until you restore it or the retention runs out.', 'axle-trash' ),
-			wp_kses( implode( ' &middot; ', $links ), array( 'a' => array( 'href' => array() ) ) ),
-			''
+			wp_kses( implode( ' &middot; ', $links ), array( 'a' => array( 'href' => array() ) ) )
 		);
 	}
 }

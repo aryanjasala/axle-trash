@@ -13,6 +13,7 @@ use AryanX\Axle\Trash\Service;
 use AryanX\Axle\Trash\Settings;
 use AryanX\Axle\Trash\Status;
 use AryanX\Axle\Trash\Trash;
+use AryanX\Axle\Trash\Users;
 use const AryanX\Axle\Trash\PLUGIN_FILE;
 use const AryanX\Axle\Trash\VERSION;
 
@@ -157,7 +158,14 @@ final class Page implements Service {
 		$bulk   = '' === $bulk && isset( $_REQUEST['action2'] ) && '-1' !== $_REQUEST['action2'] ? sanitize_key( wp_unslash( $_REQUEST['action2'] ) ) : $bulk;
 		// phpcs:enable
 
-		if ( isset( $_POST['axle_trash_empty'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Only a redirect to the confirm step, which changes nothing.
+		// Whatever the request, only a person who could have deleted something gets any further.
+		if ( ! Items::can_use() ) {
+			wp_die( esc_html__( 'You are not allowed to see the trash.', 'axle-trash' ), '', array( 'response' => 403 ) );
+		}
+
+		if ( isset( $_POST['axle_trash_empty'] ) ) {
+			// Only a redirect to the confirm step, which changes nothing, but the form's own nonce is still checked.
+			check_admin_referer( 'bulk-items' );
 			wp_safe_redirect( self::url( array( 'axle_action' => 'confirm_empty' ) ) );
 			exit;
 		}
@@ -184,6 +192,7 @@ final class Page implements Service {
 				$this->finish( 'missing', array() );
 			}
 
+			$reset  = ( new Users() )->needs_reset( Status::SNAPSHOT === $post->post_type ? $id : 0 );
 			$result = $this->trash->restore( $id, $replace );
 
 			if ( is_wp_error( $result ) && 'axle_trash_conflict' === $result->get_error_code() ) {
@@ -192,7 +201,18 @@ final class Page implements Service {
 				return;
 			}
 
+			if ( ! is_wp_error( $result ) ) {
+				$this->remember_reset( $reset );
+			}
+
 			$this->finish( is_wp_error( $result ) ? 'failed' : 'restored', array( 1 ), is_wp_error( $result ) ? $result : null );
+		}
+
+		if ( 'send_reset' === $action && isset( $_POST['item'] ) ) {
+			$user_id = absint( wp_unslash( $_POST['item'] ) );
+			check_admin_referer( 'axle_trash_reset_' . $user_id );
+			$sent = ( new Users() )->send_reset_link( $user_id );
+			$this->finish( is_wp_error( $sent ) ? 'reset_failed' : 'reset_sent', array() );
 		}
 
 		if ( 'confirm_delete' === $action ) {
@@ -252,7 +272,11 @@ final class Page implements Service {
 		$skipped = 0;
 
 		foreach ( $ids as $id ) {
-			if ( null !== $this->item( $id ) && true === $this->trash->restore( $id ) ) {
+			$post  = $this->item( $id );
+			$reset = null !== $post && Status::SNAPSHOT === $post->post_type ? ( new Users() )->needs_reset( $id ) : 0;
+
+			if ( null !== $post && true === $this->trash->restore( $id ) ) {
+				$this->remember_reset( $reset );
 				++$done;
 			} else {
 				++$skipped;
@@ -288,6 +312,19 @@ final class Page implements Service {
 		}
 
 		return array( $done, $later );
+	}
+
+	/**
+	 * Remembers a restored account so the page after the redirect can offer the reset link.
+	 *
+	 * @param int $user_id The restored user's ID, or zero when nothing needs a reset.
+	 */
+	private function remember_reset( int $user_id ): void {
+		$user = $user_id > 0 ? get_userdata( $user_id ) : false;
+
+		if ( $user instanceof \WP_User ) {
+			( new Users() )->queue_reset_notice( $user_id, (string) $user->user_login );
+		}
 	}
 
 	/**
@@ -433,6 +470,13 @@ final class Page implements Service {
 			case 'saved':
 				$text = __( 'Settings saved.', 'axle-trash' );
 				break;
+			case 'reset_sent':
+				$text = __( 'A password reset link was sent.', 'axle-trash' );
+				break;
+			case 'reset_failed':
+				$text = __( 'The password reset link could not be sent. You can send it from the user\'s profile.', 'axle-trash' );
+				$type = 'error';
+				break;
 			case 'missing':
 				$text = __( 'That item is not in the trash any more.', 'axle-trash' );
 				$type = 'warning';
@@ -441,6 +485,10 @@ final class Page implements Service {
 				$type = 'error';
 				$text = $this->failure( $why );
 				break;
+		}
+
+		if ( 'restored' === $done ) {
+			$this->reset_notices();
 		}
 
 		if ( '' === $text ) {
@@ -459,6 +507,32 @@ final class Page implements Service {
 	}
 
 	/**
+	 * After a user came back: says the password is new and offers to send a reset link. It never
+	 * sends one by itself. Shown once, on this screen, right after the restore.
+	 */
+	private function reset_notices(): void {
+		foreach ( ( new Users() )->take_reset_notices() as $user_id => $login ) {
+			if ( ! current_user_can( 'edit_user', (int) $user_id ) ) {
+				continue;
+			}
+
+			echo '<div class="notice notice-warning is-dismissible"><p>';
+			echo esc_html(
+				sprintf(
+					/* translators: %s: a username. */
+					__( '%s is back, with a new random password. The old password was not kept, so they cannot sign in until they set a new one. The link is only sent when you press the button.', 'axle-trash' ),
+					(string) $login
+				)
+			);
+			echo '</p><form method="post" action="' . esc_url( self::url() ) . '">';
+			wp_nonce_field( 'axle_trash_reset_' . (int) $user_id );
+			echo '<input type="hidden" name="axle_action" value="send_reset"><input type="hidden" name="item" value="' . (int) $user_id . '">';
+			echo '<p><button type="submit" class="button">' . esc_html__( 'Send a password reset link', 'axle-trash' ) . '</button></p>';
+			echo '</form></div>';
+		}
+	}
+
+	/**
 	 * Why a restore failed, in plain words.
 	 *
 	 * @param string $code The error code.
@@ -466,11 +540,12 @@ final class Page implements Service {
 	 */
 	private function failure( string $code ): string {
 		$known = array(
-			'axle_trash_user_exists'   => __( 'Someone else has this user ID now, so the account cannot come back with it.', 'axle-trash' ),
-			'axle_trash_login_taken'   => __( 'The username now belongs to someone else, so the account cannot come back.', 'axle-trash' ),
-			'axle_trash_email_taken'   => __( 'The email address now belongs to someone else, so the account cannot come back.', 'axle-trash' ),
-			'axle_trash_parent_parked' => $this->trash->message( 'parent_parked' ),
-			'axle_trash_user_data'     => __( 'This snapshot has no saved account, so it cannot be restored.', 'axle-trash' ),
+			'axle_trash_user_exists'      => __( 'Someone else has this user ID now, so the account cannot come back with it.', 'axle-trash' ),
+			'axle_trash_login_taken'      => __( 'The username now belongs to someone else, so the account cannot come back.', 'axle-trash' ),
+			'axle_trash_email_taken'      => __( 'The email address now belongs to someone else, so the account cannot come back.', 'axle-trash' ),
+			'axle_trash_parent_parked'    => $this->trash->message( 'parent_parked' ),
+			'axle_trash_user_data'        => __( 'This snapshot has no saved account, so it cannot be restored.', 'axle-trash' ),
+			'axle_trash_role_not_allowed' => __( 'This account had a role you are not allowed to give, so you cannot restore it.', 'axle-trash' ),
 		);
 
 		return $known[ $code ] ?? __( 'The item could not be restored.', 'axle-trash' );

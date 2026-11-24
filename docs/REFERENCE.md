@@ -15,7 +15,7 @@ WordPress deletes these for good, with no trash. Axle Trash catches the delete (
 
 A person only ever sees, counts, restores or deletes items they could have deleted. Everything else looks as if it does not exist.
 
-Deleting a user with "Delete all content" parks the account (the `wp_users` row and all user meta except `session_tokens`) and every post, page, custom post and attachment that core would have deleted for good. Attachment files stay on disk. Posts and pages that core sends to its own trash stay there, linked to the snapshot. Restore puts the user back with the same ID, login and email (refused with the reason if either now belongs to someone else), their meta, and the content. "Attribute all content to" is not touched: the account is kept, the content stays where it went.
+Deleting a user with "Delete all content" parks the account (the `wp_users` row without its password hash and activation key, and all user meta except `session_tokens` and `_application_passwords`) and every post, page, custom post and attachment that core would have deleted for good. Attachment files stay on disk. Posts and pages that core sends to its own trash stay there, linked to the snapshot. Restore puts the user back with the same ID, login and email (refused with the reason if either now belongs to someone else), their meta, and the content. The old password was never kept, so the account comes back with a new random password and the person who restored it sees a notice with a "Send a password reset link" button. Nothing is emailed until they press it. Restoring a user whose role you could not give to someone is refused. "Attribute all content to" is not touched: the account is kept, the content stays where it went.
 
 Not handled: network-level user deletion and site deletion on multisite. On multisite the trash works per site.
 
@@ -71,7 +71,7 @@ WP-CLI runs with full rights, so it lists every item.
 
 ## REST API
 
-`POST /wp-json/axle-trash/v1/items/{id}/restore` with optional `replace` (boolean). The permission is the item's own capability. A successful `DELETE` on `/wp/v2/blocks`, `/templates`, `/template-parts`, `/navigation` and `/font-families` carries `axle_trash: { id, kind, restore }` in its response when the item was parked.
+`POST /wp-json/axle-trash/v1/items/{id}/restore` with optional `replace` (boolean). The permission is the item's own capability, and the request needs a valid REST nonce or an application password. Restoring a deleted user adds `user_id` and `password_reset_required: true` to the response, and sends nothing. A successful `DELETE` on `/wp/v2/blocks`, `/templates`, `/template-parts`, `/navigation` and `/font-families` carries `axle_trash: { id, kind, restore }` in its response when the item was parked.
 
 ## Abilities (WordPress 6.9+)
 
@@ -83,7 +83,9 @@ WP-CLI runs with full rights, so it lists every item.
 
 ## Privacy
 
-Deleted accounts are kept for the retention period, so the plugin adds a suggested privacy policy paragraph, a personal data exporter and an eraser keyed by email. The eraser deletes the snapshot and the content parked with it. A user removed through core's personal data eraser is never parked. The snapshot holds the account's password hash and meta, in the same database as the account was.
+Deleted accounts are kept for the retention period, so the plugin adds a suggested privacy policy paragraph, a personal data exporter and an eraser keyed by email. The eraser deletes the snapshot and the content parked with it. A user removed through core's personal data eraser is never parked.
+
+The snapshot holds the account's profile row (username, email, display name, URL, registration date) and its user meta, in the same database the account was in. It does **not** hold the password hash, the password reset key or hashed application passwords. When an account is restored it gets a new random password, and the restorer can send a reset link from the notice on Tools > Trash (core's `retrieve_password()`), or with `wp user reset-password <id>`. The plugin never sends one by itself. Snapshots saved by an earlier build have those fields blanked once, on the first load after the update.
 
 ## Site Health
 
@@ -91,4 +93,4 @@ Deleted accounts are kept for the retention period, so the plugin adds a suggest
 
 ## Data
 
-Parked posts keep their rows with status `axle_trash` and these meta keys: `_axle_trash_status`, `_axle_trash_by`, `_axle_trash_at`, `_axle_trash_theme`, `_axle_trash_batch`. A deleted user is a record of the type `axle_trash_user` with `_axle_trash_user` (JSON) and `_axle_trash_email`. Options: `axle_trash_settings`. Cron: `axle_trash_purge`, `axle_trash_purge_more`. Uninstall removes all of it.
+Parked posts keep their rows with status `axle_trash` and these meta keys: `_axle_trash_status`, `_axle_trash_by`, `_axle_trash_at`, `_axle_trash_theme`, `_axle_trash_batch`. A deleted user is a record of the type `axle_trash_user` with `_axle_trash_user` (JSON) and `_axle_trash_email`. Options: `axle_trash_settings`, `axle_trash_data_version`. Cron: `axle_trash_purge`, `axle_trash_purge_more`. Uninstall removes all of it.
