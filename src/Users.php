@@ -15,6 +15,28 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Users {
 
+	/** The transient that holds, per signed-in user, the accounts they just restored. */
+	public const RESET_PENDING = 'axle_trash_reset_';
+
+	/**
+	 * The `wp_users` columns a snapshot may hold and a restore may write.
+	 * `user_pass` and `user_activation_key` are not here: they are never kept.
+	 *
+	 * @var string[]
+	 */
+	private const COLUMNS = array(
+		'ID',
+		'user_login',
+		'user_nicename',
+		'user_email',
+		'user_url',
+		'user_registered',
+		'user_status',
+		'display_name',
+		'spam',
+		'deleted',
+	);
+
 	/**
 	 * Saves a snapshot of a user. Runs on `delete_user`, before core deletes anything.
 	 *
@@ -30,6 +52,9 @@ final class Users {
 		if ( ! is_array( $row ) ) {
 			return 0;
 		}
+
+		// Never keep the password hash or a pending reset key of a deleted account.
+		$row = self::without_secrets( $row );
 
 		$skip = $this->skipped_meta();
 		$meta = array();
@@ -124,6 +149,11 @@ final class Users {
 		$user_id = (int) $row['ID'];
 		$exists  = false !== get_userdata( $user_id );
 
+		// A person may not bring back an account with a role they could not give to someone.
+		if ( ! $this->may_hold_roles( (array) ( $data['roles'] ?? array() ) ) ) {
+			return new \WP_Error( 'axle_trash_role_not_allowed', __( 'This account had a role you are not allowed to give, so you cannot restore it.', 'axle-trash' ), array( 'status' => 403 ) );
+		}
+
 		if ( $exists && ! is_multisite() ) {
 			return new \WP_Error( 'axle_trash_user_exists', __( 'Someone else has this user ID now, so the account cannot come back with it.', 'axle-trash' ), array( 'status' => 409 ) );
 		}
@@ -140,14 +170,21 @@ final class Users {
 				return new \WP_Error( 'axle_trash_email_taken', sprintf( __( 'The email address %s now belongs to someone else.', 'axle-trash' ), (string) $row['user_email'] ), array( 'status' => 409 ) );
 			}
 
-			$inserted = $wpdb->insert( $wpdb->users, $row ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Core has no API that inserts a user with a chosen ID.
+			// Only known columns go back, and the password is new and random: the old hash was never kept.
+			$insert                        = array_intersect_key( $row, array_flip( self::COLUMNS ) );
+			$insert['user_pass']           = wp_hash_password( wp_generate_password( 32, true, true ) );
+			$insert['user_activation_key'] = '';
+
+			$inserted = $wpdb->insert( $wpdb->users, $insert ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Core has no API that inserts a user with a chosen ID.
 
 			if ( false === $inserted ) {
 				return new \WP_Error( 'axle_trash_user_insert', __( 'The database refused the account.', 'axle-trash' ), array( 'status' => 500 ) );
 			}
 
+			$skip = $this->skipped_meta();
+
 			foreach ( (array) ( $data['meta'] ?? array() ) as $pair ) {
-				if ( ! is_array( $pair ) || ! isset( $pair[0], $pair[1] ) ) {
+				if ( ! is_array( $pair ) || ! isset( $pair[0], $pair[1] ) || in_array( (string) $pair[0], $skip, true ) ) {
 					continue;
 				}
 				$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Raw values go back exactly as they were saved.
@@ -184,6 +221,19 @@ final class Users {
 		do_action( 'axle_trash_restored', $user_id, Kinds::USER, null, false );
 
 		return true;
+	}
+
+	/**
+	 * Whether restoring this snapshot gives the account a new random password. True for every
+	 * account that is not still present (on multisite, an account only removed from this site keeps its own).
+	 *
+	 * @param int $snapshot_id Snapshot post ID.
+	 * @return int The user's ID when a reset link is needed, otherwise zero.
+	 */
+	public function needs_reset( int $snapshot_id ): int {
+		$id = $this->summary( $snapshot_id )['id'];
+
+		return $id > 0 && false === get_userdata( $id ) ? $id : 0;
 	}
 
 	/**
@@ -245,10 +295,156 @@ final class Users {
 		/**
 		 * Filters the user meta keys a snapshot leaves out.
 		 *
-		 * @param string[] $keys Meta keys. Default: `session_tokens`, so a restored account is signed out everywhere.
+		 * @param string[] $keys Meta keys. Default: `session_tokens` (a restored account is signed out everywhere)
+		 *                       and `_application_passwords` (hashed API passwords are never kept).
 		 */
-		$keys = apply_filters( 'axle_trash_user_meta_skip', array( 'session_tokens' ) );
+		$keys = apply_filters( 'axle_trash_user_meta_skip', array( 'session_tokens', '_application_passwords' ) );
 
-		return array_map( 'strval', (array) $keys );
+		// The filter may add keys. These two stay out whatever it returns.
+		return array_values( array_unique( array_merge( array( 'session_tokens', '_application_passwords' ), array_map( 'strval', (array) $keys ) ) ) );
+	}
+
+	/**
+	 * A user row without the password hash and the activation key.
+	 *
+	 * @param array<string, mixed> $row A `wp_users` row.
+	 * @return array<string, mixed>
+	 */
+	public static function without_secrets( array $row ): array {
+		unset( $row['user_pass'], $row['user_activation_key'] );
+
+		return $row;
+	}
+
+	/**
+	 * Removes what an older snapshot kept that a new one does not: the password hash, the activation
+	 * key and hashed application passwords. Used by the upgrade routine.
+	 *
+	 * @param int $snapshot_id Snapshot post ID.
+	 * @return bool True when the snapshot held any of it and was rewritten.
+	 */
+	public function scrub( int $snapshot_id ): bool {
+		$data = $this->data( $snapshot_id );
+
+		if ( array() === $data ) {
+			return false;
+		}
+
+		$changed = false;
+		$row     = isset( $data['row'] ) && is_array( $data['row'] ) ? $data['row'] : array();
+
+		if ( array_key_exists( 'user_pass', $row ) || array_key_exists( 'user_activation_key', $row ) ) {
+			$data['row'] = self::without_secrets( $row );
+			$changed     = true;
+		}
+
+		if ( isset( $data['meta'] ) && is_array( $data['meta'] ) ) {
+			$kept = array();
+
+			foreach ( $data['meta'] as $pair ) {
+				if ( is_array( $pair ) && isset( $pair[0] ) && in_array( (string) $pair[0], $this->skipped_meta(), true ) ) {
+					$changed = true;
+					continue;
+				}
+				$kept[] = $pair;
+			}
+
+			$data['meta'] = $kept;
+		}
+
+		if ( ! $changed ) {
+			return false;
+		}
+
+		$json = wp_json_encode( $data, JSON_INVALID_UTF8_SUBSTITUTE );
+
+		if ( ! is_string( $json ) ) {
+			return false;
+		}
+
+		update_post_meta( $snapshot_id, Status::META_USER, wp_slash( $json ) );
+
+		return true;
+	}
+
+	/**
+	 * Whether the current person may give every one of these roles. WP-CLI and cron (no user) may.
+	 *
+	 * @param array<int, mixed> $roles Role keys from a snapshot.
+	 * @return bool
+	 */
+	private function may_hold_roles( array $roles ): bool {
+		if ( get_current_user_id() <= 0 ) {
+			return true;
+		}
+
+		// The filter core's get_editable_roles() applies, so role plugins that limit who may give which role are respected.
+		$editable = (array) apply_filters( 'editable_roles', wp_roles()->roles ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- A core hook, applied to ask the same question core asks.
+
+		foreach ( $roles as $role ) {
+			if ( ! isset( $editable[ (string) $role ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Remembers that the person just restored an account on the Trash screen, so the page they land
+	 * on can offer a password reset link. Nothing is sent from here.
+	 *
+	 * @param int    $user_id The restored user's ID.
+	 * @param string $login   Their username.
+	 */
+	public function queue_reset_notice( int $user_id, string $login ): void {
+		$uid = get_current_user_id();
+
+		if ( $uid <= 0 ) {
+			return;
+		}
+
+		$list             = get_transient( self::RESET_PENDING . $uid );
+		$list             = is_array( $list ) ? $list : array();
+		$list[ $user_id ] = $login;
+
+		set_transient( self::RESET_PENDING . $uid, $list, 10 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * The accounts the current person just restored, once. Each shows a reset button.
+	 *
+	 * @return array<int, string> User ID => username.
+	 */
+	public function take_reset_notices(): array {
+		$uid = get_current_user_id();
+
+		if ( $uid <= 0 ) {
+			return array();
+		}
+
+		$list = get_transient( self::RESET_PENDING . $uid );
+		delete_transient( self::RESET_PENDING . $uid );
+
+		return is_array( $list ) ? $list : array();
+	}
+
+	/**
+	 * Sends the password reset link to a restored account, when the person asks for it.
+	 * The person needs the right to edit that user, like core's own "Send reset link" button.
+	 *
+	 * @param int $user_id The user's ID.
+	 * @return true|\WP_Error
+	 */
+	public function send_reset_link( int $user_id ) {
+		$user = $user_id > 0 ? get_userdata( $user_id ) : false;
+
+		if ( ! $user instanceof \WP_User || ! current_user_can( 'edit_user', $user_id ) ) {
+			return new \WP_Error( 'axle_trash_reset_denied', __( 'You cannot send a password reset link to this account.', 'axle-trash' ), array( 'status' => 403 ) );
+		}
+
+		$sent = retrieve_password( $user->user_login );
+
+		return true === $sent ? true : new \WP_Error( 'axle_trash_reset_failed', __( 'The password reset link could not be sent.', 'axle-trash' ), array( 'status' => 500 ) );
 	}
 }

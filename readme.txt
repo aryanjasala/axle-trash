@@ -22,7 +22,7 @@ Part of Axle by AryanX, a family of plugins for running WordPress sites safely.
 
 * Templates, template parts, patterns (synced or not) and navigation menus deleted in the Site Editor.
 * Font families, with their faces and their files on disk.
-* Users deleted with "Delete all content": the account, its meta, and every post, custom post and attachment that WordPress would have deleted for good. Upload files stay where they are.
+* Users deleted with "Delete all content": the account's profile and meta (not its password), and every post, custom post and attachment that WordPress would have deleted for good. Upload files stay where they are.
 
 **The Trash screen (Tools > Trash):**
 
@@ -43,10 +43,22 @@ Items stay for 30 days, then a daily job deletes them for good (font files and u
 **Good to know:**
 
 * A restored user comes back with the same ID, login and email. If the login or email now belongs to someone else, the restore is refused and says why.
+* The password is not kept. A restored user gets a new random password, and you see a notice with a "Send a password reset link" button. Nothing is emailed until you press it.
+* You can only restore a user whose role you are allowed to give.
 * "Attribute all content to" is not touched: the account is kept, the content stays where it went.
-* Network-level user deletion and site deletion on multisite are not covered. The trash works per site.
+* Multisite: the trash works per site. Deleting a user from the Network Admin, and deleting a whole site, are not covered. Nothing shows in Network Admin.
 * Deactivating the plugin leaves everything parked. Deleting the plugin finishes the parked deletes and removes its data.
-* A deleted account is kept for the retention period. The plugin adds a privacy policy paragraph, an exporter and an eraser.
+* A deleted account's profile is kept for the retention period. See Privacy below.
+
+= Privacy =
+
+Axle Trash stores no data about visitors and makes no requests to other sites. It does keep one kind of personal data: when you delete a user, a copy of the account's profile stays in your own database until you restore it, you delete it for good, or the retention runs out (30 days by default).
+
+* What is kept: the username, email address, display name, URL, registration date and the user's meta (profile fields, role, preferences). Posts and uploads deleted with the account wait next to it.
+* What is not kept: the password hash, the password reset key, signed-in sessions and hashed application passwords. Copies saved by an early build are blanked on the first load after the update.
+* A restored account gets a new random password. Nobody can sign in as that account until a reset link is sent, and it is only sent when the person who restored it presses "Send a password reset link".
+* The plugin adds a suggested paragraph to Settings > Privacy, a personal data exporter and an eraser. Both look up the copy by email address. The eraser deletes it together with the content parked for it. A user removed through WordPress's own eraser tool is never parked.
+* Deleting the plugin deletes every parked item for good and removes the copies.
 
 Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
 
@@ -76,9 +88,29 @@ No. Posts and pages still go to WordPress's trash. Axle Trash only catches the d
 
 The post never leaves the database. Only its status changes, so the ID in every `wp:block` reference stays valid.
 
+= What happens when I deactivate or delete the plugin? =
+
+Deactivating leaves everything parked, still hidden from the site, until you activate it again. Deleting the plugin from the Plugins screen deletes every parked item for good, the way WordPress would have, and removes its settings and copies of users.
+
 = Can I turn it off for one kind of item? =
 
 Yes. Untick it on the Trash screen. WordPress then deletes that kind for good, as before.
+
+= Does it work on multisite? =
+
+Only per site. Activate it on a site (or network activate it) and each site has its own trash on Tools > Trash. Deleting a user from Network Admin (Users > Delete in the network screen) and deleting a whole site are not caught, and Network Admin has no trash screen. When a site admin removes a user from one site, the account stays on the network, and a restore adds it back to that site with its role.
+
+= Does it keep the password of a deleted user? =
+
+No. The password hash is not saved. A restored user gets a new random password and nobody can sign in until a reset link is sent. After a restore you see a notice with a "Send a password reset link" button. The plugin never sends the link by itself.
+
+= Who can see the trash? =
+
+Only people who could have deleted the item. Templates, template parts, navigation menus and fonts need the right to edit the theme. A pattern follows the usual rule for deleting that pattern (including its published or private state). Users need the right to delete users. Nothing about other items is shown, counted or returned, in the list, the counts, REST, WP-CLI or the abilities.
+
+= Does it keep my deleted posts and pages? =
+
+WordPress's own trash already does, and Axle Trash leaves it alone. When a user is deleted with their content, their posts and pages stay in WordPress's trash, linked to the account, and come back with it.
 
 = What happens to an account that cannot be restored? =
 

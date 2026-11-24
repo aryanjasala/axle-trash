@@ -35,7 +35,7 @@ final class Items {
 
 		if ( $check_caps ) {
 			$cap     = Kinds::capability( $kind );
-			$allowed = 'delete_post' === $cap ? user_can( $user_id, 'delete_post', $post->ID ) : user_can( $user_id, $cap );
+			$allowed = 'delete_post' === $cap ? self::could_delete( $post, $user_id ) : user_can( $user_id, $cap );
 		}
 
 		/**
@@ -47,6 +47,50 @@ final class Items {
 		 * @param int      $user_id The user's ID. Zero for WP-CLI.
 		 */
 		return (bool) apply_filters( 'axle_trash_can', $allowed, $post, $kind, $user_id );
+	}
+
+	/**
+	 * Whether the person could have deleted the post, judged as it was before it was parked.
+	 *
+	 * Core's `delete_post` check reads the post's current status. A parked post has the internal
+	 * status, so that check would ignore "published" and let a person without the right to delete
+	 * published items see and restore one. This runs the same steps core does, with the old status.
+	 *
+	 * @param \WP_Post $post    The parked post.
+	 * @param int      $user_id The user.
+	 * @return bool
+	 */
+	public static function could_delete( \WP_Post $post, int $user_id ): bool {
+		$type = get_post_type_object( $post->post_type );
+
+		if ( ! $type instanceof \WP_Post_Type ) {
+			return false;
+		}
+
+		$caps = $type->cap;
+		$was  = (string) get_post_meta( $post->ID, Status::META_STATUS, true );
+		$need = array();
+
+		// The same steps as core's map_meta_cap() for `delete_post`, with the status the post had.
+		if ( $user_id > 0 && (int) $post->post_author === $user_id ) {
+			$need[] = in_array( $was, array( 'publish', 'future' ), true ) ? (string) $caps->delete_published_posts : (string) $caps->delete_posts;
+		} else {
+			$need[] = (string) $caps->delete_others_posts;
+
+			if ( in_array( $was, array( 'publish', 'future' ), true ) ) {
+				$need[] = (string) $caps->delete_published_posts;
+			} elseif ( 'private' === $was ) {
+				$need[] = (string) $caps->delete_private_posts;
+			}
+		}
+
+		foreach ( array_unique( array_filter( $need ) ) as $cap ) {
+			if ( ! user_can( $user_id, $cap ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

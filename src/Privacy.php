@@ -15,6 +15,9 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Privacy implements Service {
 
+	/** The most snapshots one exporter or eraser page handles. */
+	private const LIMIT = 50;
+
 	/**
 	 * Parking and deleting.
 	 *
@@ -82,7 +85,7 @@ final class Privacy implements Service {
 			array(
 				'post_type'              => Status::SNAPSHOT,
 				'post_status'            => Status::STATUS,
-				'posts_per_page'         => 50,
+				'posts_per_page'         => self::LIMIT,
 				'fields'                 => 'ids',
 				'no_found_rows'          => true,
 				'update_post_term_cache' => false,
@@ -108,7 +111,7 @@ final class Privacy implements Service {
 			$groups[] = array(
 				'group_id'          => 'axle-trash-user',
 				'group_label'       => __( 'Deleted account kept in the trash', 'axle-trash' ),
-				'group_description' => __( 'The account was deleted from the site. A copy is kept for a short time so a mistaken delete can be undone.', 'axle-trash' ),
+				'group_description' => __( 'The account was deleted from the site. A copy of its profile (username, email, display name and profile fields, but not the password) is kept for a short time so a mistaken delete can be undone.', 'axle-trash' ),
 				'item_id'           => 'axle-trash-user-' . $id,
 				'data'              => array(
 					array(
@@ -145,9 +148,13 @@ final class Privacy implements Service {
 	 */
 	public function erase( $email ): array {
 		$removed = false;
-		$done    = true;
 
-		foreach ( $this->snapshots_for( (string) $email ) as $id ) {
+		$ids = $this->snapshots_for( (string) $email );
+
+		// A full page means there may be more. Core calls the eraser again until `done` is true.
+		$done = count( $ids ) < self::LIMIT;
+
+		foreach ( $ids as $id ) {
 			$left    = $this->trash->purge( $id );
 			$removed = true;
 
@@ -181,7 +188,7 @@ final class Privacy implements Service {
 				'<p><strong class="privacy-policy-tutorial">' . __( 'Suggested text:', 'axle-trash' ) . '</strong> ' .
 				sprintf(
 					/* translators: %d: number of days. */
-					_n( 'When an account is deleted from this site, a copy of its profile is kept for %d day before it is erased for good. This lets us undo a mistaken delete. On request, we can erase the copy sooner.', 'When an account is deleted from this site, a copy of its profile is kept for %d days before it is erased for good. This lets us undo a mistaken delete. On request, we can erase the copy sooner.', $days, 'axle-trash' ),
+					_n( 'When an account is deleted from this site, a copy of its profile (username, email address, display name and profile fields) is kept for %d day before it is erased for good, together with any posts and uploads that were deleted with the account. This lets us undo a mistaken delete. The copy does not include the account\'s password or its password reset key. If the account is restored, it gets a new random password and the person sets their own through a password reset link. On request, we can erase the copy sooner.', 'When an account is deleted from this site, a copy of its profile (username, email address, display name and profile fields) is kept for %d days before it is erased for good, together with any posts and uploads that were deleted with the account. This lets us undo a mistaken delete. The copy does not include the account\'s password or its password reset key. If the account is restored, it gets a new random password and the person sets their own through a password reset link. On request, we can erase the copy sooner.', $days, 'axle-trash' ),
 					$days
 				) . '</p>'
 			)

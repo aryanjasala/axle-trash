@@ -7,6 +7,15 @@
 
 add_filter( 'wp_is_application_passwords_available', '__return_true' );
 
+// No mail leaves the test site. Each attempt is counted, so a test can prove that nothing was sent by itself.
+add_filter(
+	'pre_wp_mail',
+	static function () {
+		update_option( 'axle_trash_test_mails', (int) get_option( 'axle_trash_test_mails', 0 ) + 1, false );
+		return true;
+	}
+);
+
 add_action(
 	'init',
 	static function () {

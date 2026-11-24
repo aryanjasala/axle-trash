@@ -33,7 +33,12 @@
 	}
 
 	function undo( info ) {
-		wp.apiFetch( { path: '/axle-trash/v1/items/' + info.id + '/restore', method: 'POST' } ).then(
+		var id = parseInt( info.id, 10 );
+		if ( ! id || id < 1 ) {
+			return;
+		}
+		// apiFetch adds the REST nonce. The server checks the person's right to restore this item.
+		wp.apiFetch( { path: '/axle-trash/v1/items/' + id + '/restore', method: 'POST' } ).then(
 			function () {
 				try {
 					wp.data.dispatch( 'core' ).invalidateResolutionForStore();

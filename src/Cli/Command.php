@@ -12,6 +12,7 @@ use AryanX\Axle\Trash\Kinds;
 use AryanX\Axle\Trash\Status;
 use AryanX\Axle\Trash\Trash;
 use AryanX\Axle\Trash\Usage;
+use AryanX\Axle\Trash\Users;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -120,15 +121,23 @@ final class Command {
 		$failed  = 0;
 
 		foreach ( $args as $arg ) {
-			$result = $this->trash->restore( (int) $arg, (bool) $replace );
+			$id    = absint( $arg );
+			$reset = ( new Users() )->needs_reset( $id );
+
+			$result = $this->trash->restore( $id, (bool) $replace );
 
 			if ( is_wp_error( $result ) ) {
-				\WP_CLI::warning( sprintf( '%d: %s', (int) $arg, $result->get_error_message() ) );
+				\WP_CLI::warning( sprintf( '%d: %s', $id, $result->get_error_message() ) );
 				++$failed;
 				continue;
 			}
 
-			\WP_CLI::log( sprintf( 'Restored %d.', (int) $arg ) );
+			\WP_CLI::log( sprintf( 'Restored %d.', $id ) );
+
+			if ( $reset > 0 ) {
+				// The old password hash was never kept. Nothing is emailed from here.
+				\WP_CLI::warning( sprintf( 'User %1$d came back with a new random password. Send a reset link with: wp user reset-password %1$d', $reset ) );
+			}
 		}
 
 		if ( $failed > 0 ) {
@@ -160,7 +169,7 @@ final class Command {
 		\WP_CLI::confirm( sprintf( 'Delete %d item(s) for good? This cannot be undone.', count( $args ) ), $assoc_args );
 
 		foreach ( $args as $arg ) {
-			$this->purge_all( (int) $arg );
+			$this->purge_all( absint( $arg ) );
 		}
 
 		\WP_CLI::success( 'Deleted.' );

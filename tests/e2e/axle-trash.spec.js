@@ -322,4 +322,123 @@ test.describe( 'Axle Trash', () => {
 		await expect( page.locator( '.axle-empty' ) ).toBeVisible();
 		expect( seed.status( a.pattern ) ).toBeNull();
 	} );
+	test( 'a deleted user keeps no password: the snapshot has none, restore sets a random one, and nothing is sent until the button is pressed', async ( { page } ) => {
+		const a = seed.author( 'nopass' );
+		const oldHash = seed.json( `return get_userdata( ${ a.user } )->user_pass;` );
+		wp( 'user', 'delete', String( a.user ), '--yes' );
+
+		const snapshot = seed.json( `$p = get_posts( array( 'post_type' => 'axle_trash_user', 'post_status' => 'axle_trash', 'numberposts' => 1, 'fields' => 'ids' ) ); return $p[0];` );
+		const saved = parkedMeta( snapshot, '_axle_trash_user' );
+		expect( saved ).toContain( 'nopass@example.com' );
+		expect( saved ).not.toContain( 'user_pass' );
+		expect( saved ).not.toContain( 'user_activation_key' );
+		expect( saved ).not.toContain( oldHash );
+
+		await page.goto( '/wp-admin/tools.php?page=axle-trash&view=users' );
+		const row = page.locator( 'tr', { hasText: 'Wanda Writer' } );
+		await row.hover();
+		await row.getByRole( 'link', { name: /Restore/ } ).click();
+		const reset = page.locator( '.notice-warning', { hasText: 'new random password' } );
+		await expect( reset ).toBeVisible();
+		await expect( reset.getByRole( 'button', { name: 'Send a password reset link' } ) ).toBeVisible();
+
+		expect( seed.json( `$u = get_userdata( ${ a.user } ); return array( $u->user_pass === ${ JSON.stringify( oldHash ) }, wp_check_password( 'pass-writer', $u->user_pass, $u->ID ), '' === (string) $u->user_activation_key );` ) ).toEqual( [ false, false, true ] );
+		expect( seed.json( 'return (int) get_option( "axle_trash_test_mails", 0 );' ) ).toBe( 0 );
+
+		await reset.getByRole( 'button', { name: 'Send a password reset link' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'A password reset link was sent' );
+		expect( seed.json( `return '' !== (string) get_userdata( ${ a.user } )->user_activation_key;` ) ).toBe( true );
+		expect( seed.json( 'return (int) get_option( "axle_trash_test_mails", 0 );' ) ).toBe( 1 );
+
+		// The notice is gone on the next load and the button does not come back.
+		await page.goto( '/wp-admin/tools.php?page=axle-trash' );
+		await expect( page.getByRole( 'button', { name: 'Send a password reset link' } ) ).toHaveCount( 0 );
+	} );
+
+	test( 'snapshots saved before the change are blanked on the first load after the update', async ( { page } ) => {
+		const a = seed.author( 'oldsnap' );
+		wp( 'user', 'delete', String( a.user ), '--yes' );
+		const snapshot = seed.json( `$p = get_posts( array( 'post_type' => 'axle_trash_user', 'post_status' => 'axle_trash', 'numberposts' => 1, 'fields' => 'ids' ) ); return $p[0];` );
+		seed.json(
+			`$d = json_decode( get_post_meta( ${ snapshot }, '_axle_trash_user', true ), true );
+			$d['row']['user_pass'] = '$P$OLDHASHOLDHASH'; $d['row']['user_activation_key'] = '1:RESETKEY';
+			$d['meta'][] = array( '_application_passwords', 'a:0:{}' );
+			update_post_meta( ${ snapshot }, '_axle_trash_user', wp_slash( wp_json_encode( $d ) ) );
+			update_option( 'axle_trash_data_version', 2 );
+			return true;`
+		);
+		// Read with the plugin switched off, so a WP-CLI call does not run the update first.
+		const raw = () => wp( 'post', 'meta', 'get', String( snapshot ), '_axle_trash_user', '--skip-plugins=axle-trash' );
+		wp( 'option', 'delete', 'axle_trash_data_version', '--skip-plugins=axle-trash' );
+		expect( raw() ).toContain( 'OLDHASHOLDHASH' );
+
+		await page.goto( '/wp-admin/index.php' );
+
+		const saved = raw();
+		expect( saved ).not.toContain( 'OLDHASHOLDHASH' );
+		expect( saved ).not.toContain( 'RESETKEY' );
+		expect( saved ).not.toContain( '_application_passwords' );
+		expect( saved ).toContain( 'oldsnap@example.com' );
+		expect( seed.json( 'return (int) get_option( "axle_trash_data_version" );' ) ).toBe( 2 );
+	} );
+
+	test( 'a published pattern needs the right to delete published items, so a contributor sees nothing and cannot restore it', async ( { browser, rest } ) => {
+		const contributor = seed.makeUser( 'contrib', 'contributor' );
+		const pattern = seed.json( `return wp_insert_post( array( 'post_type' => 'wp_block', 'post_status' => 'publish', 'post_title' => 'Contributor pattern', 'post_content' => 'p', 'post_author' => ${ contributor } ) );` );
+		const draft = seed.json( `return wp_insert_post( array( 'post_type' => 'wp_block', 'post_status' => 'draft', 'post_title' => 'Contributor draft', 'post_content' => 'p', 'post_author' => ${ contributor } ) );` );
+		await rest( 'DELETE', `/wp/v2/blocks/${ pattern }?force=true` );
+		await rest( 'DELETE', `/wp/v2/blocks/${ draft }?force=true` );
+		expect( seed.status( pattern ) ).toBe( 'axle_trash' );
+		expect( seed.status( draft ) ).toBe( 'axle_trash' );
+
+		const { context, page } = await logInAs( browser, 'contrib', 'pass-contrib' );
+		await page.goto( '/wp-admin/tools.php?page=axle-trash' );
+		const body = await page.locator( '.axle-ui' ).innerText();
+		expect( body ).toContain( 'Contributor draft' );
+		expect( body ).not.toContain( 'Contributor pattern' );
+		await expect( page.locator( '.subsubsub' ) ).toContainText( 'All (1)' );
+		await context.close();
+
+		const client = await appPasswordClient( 'contrib', 'axle-trash-test' );
+		expect( ( await client.call( 'POST', `/axle-trash/v1/items/${ pattern }/restore` ) ).status ).toBe( 403 );
+		expect( ( await client.call( 'POST', `/axle-trash/v1/items/${ draft }/restore` ) ).status ).toBe( 200 );
+		await client.dispose();
+		expect( seed.status( pattern ) ).toBe( 'axle_trash' );
+		expect( seed.status( draft ) ).toBe( 'draft' );
+	} );
+
+	test( 'a request to the Trash screen without its nonce changes nothing', async ( { request, rest } ) => {
+		const { pattern } = seed.patternWithPost( 'NONCE' );
+		await rest( 'DELETE', `/wp/v2/blocks/${ pattern }?force=true` );
+
+		for ( const form of [
+			{ axle_action: 'delete', 'item[]': String( pattern ) },
+			{ axle_action: 'empty' },
+			{ action: 'delete', 'item[]': String( pattern ) },
+			{ axle_trash_empty: 'Empty the trash' },
+			{ axle_action: 'send_reset', item: '1' },
+		] ) {
+			const response = await request.post( '/wp-admin/tools.php?page=axle-trash', { form, maxRedirects: 0 } );
+			expect( response.status() ).toBe( 403 );
+		}
+		const get = await request.get( `/wp-admin/tools.php?page=axle-trash&axle_action=restore&item=${ pattern }`, { maxRedirects: 0 } );
+		expect( get.status() ).toBe( 403 );
+		const settings = await request.post( '/wp-admin/admin-post.php', { form: { action: 'axle_trash_save_settings', retention: '1' }, maxRedirects: 0 } );
+		expect( settings.status() ).toBe( 403 );
+
+		expect( seed.status( pattern ) ).toBe( 'axle_trash' );
+		expect( seed.json( 'return false === get_option( "axle_trash_settings" );' ) ).toBe( true );
+	} );
+
+	test( 'the plugin shows no notice on other admin screens, even with items in the trash', async ( { page, rest } ) => {
+		const { pattern } = seed.patternWithPost( 'QUIET' );
+		await rest( 'DELETE', `/wp/v2/blocks/${ pattern }?force=true` );
+		const a = seed.author( 'quiet' );
+		wp( 'user', 'delete', String( a.user ), '--yes' );
+
+		for ( const url of [ '/wp-admin/index.php', '/wp-admin/plugins.php', '/wp-admin/users.php', '/wp-admin/options-general.php', '/wp-admin/tools.php', '/wp-admin/site-health.php' ] ) {
+			await page.goto( url );
+			await expect( page.locator( '.notice, .updated, .error' ).filter( { hasText: /Axle|trash/i } ), url ).toHaveCount( 0 );
+		}
+	} );
 } );

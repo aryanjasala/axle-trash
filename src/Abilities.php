@@ -150,8 +150,10 @@ final class Abilities implements Service {
 				'output_schema'       => array(
 					'type'       => 'object',
 					'properties' => array(
-						'restored' => array( 'type' => 'boolean' ),
-						'id'       => array( 'type' => 'integer' ),
+						'restored'                => array( 'type' => 'boolean' ),
+						'id'                      => array( 'type' => 'integer' ),
+						'user_id'                 => array( 'type' => 'integer' ),
+						'password_reset_required' => array( 'type' => 'boolean' ),
 					),
 				),
 				'execute_callback'    => array( $this, 'restore_item' ),
@@ -200,7 +202,7 @@ final class Abilities implements Service {
 	 * @return bool
 	 */
 	public function can_act( $input = null ): bool {
-		$id   = is_array( $input ) && isset( $input['id'] ) ? (int) $input['id'] : 0;
+		$id   = is_array( $input ) && isset( $input['id'] ) ? absint( $input['id'] ) : 0;
 		$post = $id > 0 ? get_post( $id ) : null;
 
 		return $post instanceof \WP_Post && Status::STATUS === $post->post_status && Items::can( $post );
@@ -213,7 +215,7 @@ final class Abilities implements Service {
 	 * @return array<string, mixed>
 	 */
 	public function list_items( $input = null ): array {
-		$kind  = is_array( $input ) && isset( $input['kind'] ) ? (string) $input['kind'] : '';
+		$kind  = is_array( $input ) && isset( $input['kind'] ) ? sanitize_key( (string) $input['kind'] ) : '';
 		$items = array();
 
 		foreach ( Items::visible() as $post ) {
@@ -237,13 +239,32 @@ final class Abilities implements Service {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function restore_item( $input = null ) {
-		$id     = is_array( $input ) ? (int) ( $input['id'] ?? 0 ) : 0;
+		$id = is_array( $input ) ? absint( $input['id'] ?? 0 ) : 0;
+
+		// Re-check here: the permission callback runs first, but this method is also public.
+		if ( ! $this->can_act( array( 'id' => $id ) ) ) {
+			return new \WP_Error( 'axle_trash_forbidden', __( 'You cannot restore this item.', 'axle-trash' ), array( 'status' => 403 ) );
+		}
+
+		$reset  = ( new Users() )->needs_reset( $id );
 		$result = $this->trash->restore( $id );
 
-		return is_wp_error( $result ) ? $result : array(
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$out = array(
 			'restored' => true,
 			'id'       => $id,
 		);
+
+		if ( $reset > 0 ) {
+			// A new random password was set. Nothing is sent; a person sends the reset link.
+			$out['user_id']                 = $reset;
+			$out['password_reset_required'] = true;
+		}
+
+		return $out;
 	}
 
 	/**
@@ -253,7 +274,12 @@ final class Abilities implements Service {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function delete_item( $input = null ) {
-		$id   = is_array( $input ) ? (int) ( $input['id'] ?? 0 ) : 0;
+		$id = is_array( $input ) ? absint( $input['id'] ?? 0 ) : 0;
+
+		if ( ! $this->can_act( array( 'id' => $id ) ) ) {
+			return new \WP_Error( 'axle_trash_forbidden', __( 'You cannot delete this item.', 'axle-trash' ), array( 'status' => 403 ) );
+		}
+
 		$left = $this->trash->purge( $id );
 
 		if ( is_wp_error( $left ) ) {
